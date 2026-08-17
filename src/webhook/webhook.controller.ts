@@ -1,9 +1,21 @@
 // src/webhook/webhook.controller.ts — Endpoints del webhook de WhatsApp
 
-import { Body, Controller, Get, HttpCode, Inject, Logger, Post, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Inject,
+  Logger,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { Request, Response } from 'express';
 
 import { PROVEEDOR_WHATSAPP, ProveedorWhatsApp } from '../providers/whatsapp-provider.interface';
+import { FirmaMetaGuard } from './firma-meta.guard';
 import { WebhookService } from './webhook.service';
 
 @Controller()
@@ -40,6 +52,7 @@ export class WebhookController {
    * respondiéndole dos veces al cliente.
    */
   @Post('webhook')
+  @UseGuards(FirmaMetaGuard)
   @HttpCode(200)
   recibir(@Body() body: unknown) {
     void this.webhook

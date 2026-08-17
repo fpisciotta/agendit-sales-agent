@@ -15,6 +15,9 @@ import { TZ_NEGOCIO, formatearNegocio } from './common/tiempo';
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule, {
+    // Necesario para verificar la firma de Meta: hay que hashear el cuerpo
+    // exacto que llegó, no el JSON re-serializado (ver FirmaMetaGuard).
+    rawBody: true,
     logger:
       process.env.NODE_ENV === 'production'
         ? ['log', 'warn', 'error']

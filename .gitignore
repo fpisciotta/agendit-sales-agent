@@ -1,7 +1,9 @@
 # Secretos — NUNCA subir
-.env
-.env.local
-.env.*.local
+# Se ignora TODO lo que empiece con .env y se habilita solo el ejemplo.
+# Listar variantes una por una (.env, .env.local, ...) deja afuera la que se
+# invente mañana: así pasó .env.production y GitHub tuvo que frenar el push.
+.env*
+!env.example
 
 # Base de datos local
 *.db
