@@ -57,9 +57,14 @@ function opcionesDb() {
 
 @Module({
   imports: [
-    // El primero de la lista gana. .env.local es el que usamos; .env queda
-    // como respaldo para entornos donde se monte con ese nombre.
-    ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env.local', '.env'] }),
+    // El primero de la lista que exista gana. Se contemplan los tres nombres
+    // que usamos: .env.local en desarrollo, .env.production en el servidor, y
+    // .env como respaldo. Sin esto, un archivo con el nombre "equivocado" se
+    // ignora en silencio y el agente arranca sin claves.
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: ['.env.local', `.env.${process.env.NODE_ENV ?? 'development'}`, '.env'],
+    }),
     TypeOrmModule.forRoot(opcionesDb()),
     ScheduleModule.forRoot(),
     AgentConfigModule,
