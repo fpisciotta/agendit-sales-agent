@@ -1,0 +1,32 @@
+# Configuración del negocio — Generado por AgentKit
+negocio:
+  nombre: "Agendit"
+  descripcion: >
+    Software de agendamiento y gestión para negocios de belleza, bienestar y salud.
+    Plataforma integral que automatiza citas mediante sitio web personalizado de reservas,
+    recordatorios automáticos via WhatsApp, web app de gestión en tiempo real 24/7,
+    reportes de desempeño, ventas, comisiones y clientes. Módulos financieros de
+    detalle de ventas, caja, facturación electrónica. Base de clientes con historial
+    de reservas, pagos, planes y ficha clínica. Agente de IA conectado a WhatsApp
+    corporativo que actúa como secretaria 24/7.
+  horario: "24/7"
+  clientes_objetivo: >
+    Barberías, salones, estéticas, spas, pilates, doctores, odontólogos,
+    psicólogos, nutricionistas, clínicas/sanatorios médicos — negocios que
+    se manejan con reservas.
+  contacto:
+    whatsapp: "+595 985 109 591"
+    facebook: "https://www.facebook.com/agendit"
+    instagram: "https://www.instagram.com/agendit"
+    linkedin: "https://www.linkedin.com/company/agenditpy"
+    web: "https://agendit.com.py"
+
+agente:
+  nombre: "Ana"
+  tono: "vendedor y persuasivo"
+  casos_de_uso:
+    - "Calificar y atender leads / ventas"
+
+metadata:
+  creado: "2026-08-16"
+  version: "1.0"

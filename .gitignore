@@ -1,0 +1,22 @@
+# Secretos — NUNCA subir
+.env
+.env.local
+.env.*.local
+
+# Base de datos local
+*.db
+*.sqlite
+*.sqlite3
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,30 @@
+# Agendit
+
+> Software de agendamiento y gestión para negocios de belleza, bienestar y salud. Reservas por WhatsApp con IA, pagos online, caja, facturación e inventario en una sola plataforma.
+
+## Producto
+- [Inicio](https://agendit.com.py): Funcionalidades, precios y agentes de IA
+- [Precios](https://agendit.com.py/#pricing-section): Planes para cada tipo de negocio
+- [Política de privacidad](https://agendit.com.py/privacy-policy)
+
+## Blog
+- [Agenda online](https://agendit.com.py/blog/agenda-online)
+- [Aumentar reservas por WhatsApp](https://agendit.com.py/blog/aumentar-reservas-whatsapp)
+- [Automatizar la gestión de reservas](https://agendit.com.py/blog/automatizar-gestion-reservas)
+- [Citas virtuales](https://agendit.com.py/blog/citas-virtuales)
+- [Clases grupales con capacidad limitada (pilates, yoga)](https://agendit.com.py/blog/clases-grupales-capacidad-limitada-pilates-yoga)
+- [Cómo administrar tu barbería](https://agendit.com.py/blog/como-administrar-tu-barberia)
+- [Cómo administrar tu salón de belleza o peluquería](https://agendit.com.py/blog/como-administrar-tu-salon-de-belleza-o-peluqueria)
+- [Google Calendar](https://agendit.com.py/blog/google-calendar)
+- [Link de pago](https://agendit.com.py/blog/link-de-pago)
+- [Link de reservas](https://agendit.com.py/blog/link-de-reservas)
+- [MIA AI: agente de WhatsApp 24/7](https://agendit.com.py/blog/mia-ai-agente-whatsapp)
+- [Módulos financieros: caja, facturación e inventario](https://agendit.com.py/blog/modulos-financieros-caja-facturacion-inventario)
+- [Pagos online](https://agendit.com.py/blog/pagos-online)
+- [Reducir ausencias](https://agendit.com.py/blog/reducir-ausencias)
+
+## Contacto
+- WhatsApp/Tel: +595 985 109 591
+- Facebook: https://www.facebook.com/agendit
+- Instagram: https://www.instagram.com/agendit
+- LinkedIn: https://www.linkedin.com/company/agenditpy
