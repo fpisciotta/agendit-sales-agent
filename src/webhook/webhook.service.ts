@@ -110,6 +110,11 @@ export class WebhookService {
     // escribiendo #on desde la misma app.
     if (comando === '#on') {
       await this.memory.reactivarAgente(msg.telefono);
+      // Habilita al agente aunque el número no venga de publicidad: un #on es
+      // una persona decidiendo que el agente atienda esta conversación, y eso
+      // manda por encima del filtro automático. Sin esto el comando no hace
+      // nada visible en esas conversaciones — el agente sigue mudo.
+      await this.memory.registrarLeadPublicidad(msg.telefono, 'activado-con-#on');
       this.logger.log(`Agente reactivado desde la app: ${msg.telefono}`);
       return;
     }
@@ -222,22 +227,11 @@ export class WebhookService {
     // El cliente escribió: si había un recontacto agendado, ya no hace falta.
     await this.memory.cancelarProgramados(msg.telefono);
 
-    // #on y #off son comandos del EQUIPO, no del cliente. Normalmente se escriben
-    // desde la app WhatsApp Business y llegan como eco (ver manejarEchoHumano);
-    // acá quedan como respaldo por si alguien los manda desde otro cliente de
-    // WhatsApp. Ninguno notifica al equipo: es el equipo el que los escribió.
-    const comando = msg.texto.trim().toLowerCase();
-    if (comando === '#on') {
-      await this.memory.reactivarAgente(msg.telefono);
-      this.logger.log(`Agente reactivado para: ${msg.telefono}`);
-      return;
-    }
-
-    if (comando === '#off') {
-      await this.memory.derivarAHumano(msg.telefono);
-      this.logger.log(`Agente desactivado para: ${msg.telefono}`);
-      return;
-    }
+    // #on y #off NO se manejan acá a propósito. Son comandos del equipo, que
+    // los escribe desde la app WhatsApp Business — y eso llega como eco, no
+    // como mensaje del cliente (ver manejarEchoHumano). Un "#on" que entre por
+    // esta vía lo escribió el cliente, y no debería poder habilitarse solo ni
+    // silenciar al agente: se trata como un mensaje cualquiera.
 
     if (msg.desdePublicidad) {
       await this.memory.registrarLeadPublicidad(msg.telefono, msg.referralSource);
