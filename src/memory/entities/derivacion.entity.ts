@@ -14,6 +14,14 @@ export class Derivacion {
   @Column({ type: 'boolean', default: true })
   activa!: boolean;
 
+  /**
+   * True si ya se avisó al equipo por este cliente. No se resetea al reactivar
+   * el agente: el aviso se manda una sola vez por cliente, no una vez por
+   * derivación.
+   */
+  @Column({ type: 'boolean', default: false })
+  notificado!: boolean;
+
   @UpdateDateColumn()
   timestamp!: Date;
 }

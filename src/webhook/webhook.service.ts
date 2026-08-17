@@ -21,6 +21,19 @@ const MARCA_DERIVAR = '[DERIVAR_A_HUMANO]';
 const SOLO_LEADS_PUBLICIDAD = process.env.SOLO_LEADS_PUBLICIDAD !== 'false';
 
 /**
+ * Números del equipo que reciben el aviso cuando una conversación se deriva.
+ * En formato E.164 sin "+", separados por coma.
+ */
+const NUMEROS_NOTIFICACION = (process.env.NUMEROS_NOTIFICACION ?? '595972511222,595984489269')
+  .split(',')
+  .map((numero) => numero.replace(/\D/g, ''))
+  .filter((numero) => numero.length > 0);
+
+/** Plantilla aprobada que avisa al equipo. Recibe el número del cliente en el body. */
+const PLANTILLA_NOTIFICACION = process.env.PLANTILLA_NOTIFICACION ?? 'sales_agent_notification';
+const IDIOMA_NOTIFICACION = process.env.PLANTILLA_NOTIFICACION_IDIOMA ?? 'es';
+
+/**
  * Mensajes que hacen que el agente atienda aunque el número no venga marcado
  * como lead de publicidad.
  *
@@ -92,12 +105,55 @@ export class WebhookService {
       return;
     }
 
+    // #off es la vía explícita del equipo para tomar la conversación. No se
+    // guarda en el historial: es un comando, no algo que le dijimos al cliente.
+    // Tampoco notifica — el equipo ya está acá, lo escribió él.
+    if (comando === '#off') {
+      await this.memory.derivarAHumano(msg.telefono);
+      this.logger.log(`Agente desactivado desde la app: ${msg.telefono}`);
+      return;
+    }
+
     await this.memory.guardarMensaje(msg.telefono, 'assistant', msg.texto);
 
     if (!(await this.memory.estaDerivada(msg.telefono))) {
       await this.memory.derivarAHumano(msg.telefono);
       this.logger.log(`Humano respondió desde la app, agente en pausa: ${msg.telefono}`);
     }
+  }
+
+  /**
+   * Avisa al equipo que una conversación quedó esperando respuesta humana.
+   *
+   * Va por plantilla y no por texto libre a propósito: los números del equipo
+   * casi nunca tienen una ventana de 24 h abierta con el negocio, y un texto
+   * libre fuera de esa ventana se acepta con wamid y nunca se entrega.
+   *
+   * Un fallo acá no puede tumbar la conversación con el cliente: si la
+   * notificación no sale, se loguea y el flujo sigue.
+   */
+  private async notificarEquipo(telefonoCliente: string): Promise<void> {
+    if (NUMEROS_NOTIFICACION.length === 0) return;
+
+    const resultados = await Promise.allSettled(
+      NUMEROS_NOTIFICACION.map((destino) =>
+        this.proveedor.enviarPlantilla(destino, PLANTILLA_NOTIFICACION, {
+          parametros: [`+${telefonoCliente}`],
+          idioma: IDIOMA_NOTIFICACION,
+        }),
+      ),
+    );
+
+    resultados.forEach((resultado, i) => {
+      const destino = NUMEROS_NOTIFICACION[i];
+      if (resultado.status === 'fulfilled' && resultado.value) {
+        this.logger.log(`Equipo notificado (${destino}) sobre el cliente ${telefonoCliente}`);
+      } else {
+        const motivo =
+          resultado.status === 'rejected' ? (resultado.reason as Error).message : 'la API rechazó el envío';
+        this.logger.error(`No se pudo notificar a ${destino}: ${motivo}`);
+      }
+    });
   }
 
   /**
@@ -113,13 +169,17 @@ export class WebhookService {
   private async manejarMensajeCliente(msg: MensajeEntrante): Promise<void> {
     this.logger.log(`Mensaje de ${msg.telefono}: ${msg.texto}`);
 
-    // Comandos de control desde WhatsApp
+    // #on y #off son comandos del EQUIPO, no del cliente. Normalmente se escriben
+    // desde la app WhatsApp Business y llegan como eco (ver manejarEchoHumano);
+    // acá quedan como respaldo por si alguien los manda desde otro cliente de
+    // WhatsApp. Ninguno notifica al equipo: es el equipo el que los escribió.
     const comando = msg.texto.trim().toLowerCase();
     if (comando === '#on') {
       await this.memory.reactivarAgente(msg.telefono);
       this.logger.log(`Agente reactivado para: ${msg.telefono}`);
       return;
     }
+
     if (comando === '#off') {
       await this.memory.derivarAHumano(msg.telefono);
       this.logger.log(`Agente desactivado para: ${msg.telefono}`);
@@ -159,6 +219,13 @@ export class WebhookService {
       respuesta = respuesta.replace(MARCA_DERIVAR, '').trim();
       await this.memory.derivarAHumano(msg.telefono);
       this.logger.log(`Conversación derivada a humano: ${msg.telefono}`);
+
+      // Solo la primera derivación de este cliente avisa al equipo.
+      if (await this.memory.registrarNotificacion(msg.telefono)) {
+        await this.notificarEquipo(msg.telefono);
+      } else {
+        this.logger.log(`Ya se había notificado al equipo por ${msg.telefono}, no se repite`);
+      }
     }
 
     await this.memory.guardarMensaje(msg.telefono, 'user', msg.texto);

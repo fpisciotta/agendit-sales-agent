@@ -64,6 +64,26 @@ export class MemoryService {
     return count > 0;
   }
 
+  /**
+   * Marca que ya se avisó al equipo por este cliente y devuelve si el aviso
+   * corresponde enviarse ahora.
+   *
+   * Solo la PRIMERA derivación notifica. Si después alguien reactiva el agente
+   * con #on y la conversación vuelve a derivarse, no se avisa de nuevo: el
+   * equipo ya tiene a este cliente en el radar.
+   *
+   * Devuelve false si no hay derivación registrada — llamalo después de
+   * derivarAHumano().
+   */
+  async registrarNotificacion(telefono: string): Promise<boolean> {
+    const derivacion = await this.derivaciones.findOne({ where: { telefono } });
+    if (!derivacion || derivacion.notificado) return false;
+
+    derivacion.notificado = true;
+    await this.derivaciones.save(derivacion);
+    return true;
+  }
+
   async reactivarAgente(telefono: string): Promise<void> {
     await this.derivaciones.update({ telefono }, { activa: false });
   }
