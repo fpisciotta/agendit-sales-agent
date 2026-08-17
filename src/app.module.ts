@@ -2,33 +2,48 @@
 
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AgentConfigModule } from './config/agent-config.module';
+import { FollowupModule } from './followup/followup.module';
 import { Derivacion } from './memory/entities/derivacion.entity';
 import { LeadPublicidad } from './memory/entities/lead-publicidad.entity';
 import { Mensaje } from './memory/entities/mensaje.entity';
+import { Cliente } from './memory/entities/cliente.entity';
+import { RecontactoProgramado } from './memory/entities/recontacto-programado.entity';
+import { Recontacto } from './memory/entities/recontacto.entity';
 import { WebhookModule } from './webhook/webhook.module';
 
-const ENTIDADES = [Mensaje, Derivacion, LeadPublicidad];
+const ENTIDADES = [Mensaje, Derivacion, LeadPublicidad, Recontacto, Cliente, RecontactoProgramado];
 
 /**
- * SQLite para desarrollo, PostgreSQL en producción (Railway inyecta
- * DATABASE_URL). `synchronize` solo en desarrollo: en producción crea y
- * modifica tablas sin control, que es justo lo que no querés en una base
- * con datos de clientes.
+ * SQLite, en desarrollo y en producción.
+ *
+ * `synchronize` queda activo: sin él, cada columna nueva exige una migración a
+ * mano y el agente arranca roto. El riesgo real de synchronize es que puede
+ * borrar datos al renombrar o cambiar el tipo de una columna — mientras solo
+ * agregues campos es seguro, pero hacé backup del .db antes de un deploy que
+ * toque el esquema.
+ *
+ * OJO CON EL HOSTING: SQLite guarda todo en un archivo, así que necesita disco
+ * persistente. En plataformas con filesystem efímero (Railway, Heroku, Render
+ * sin volumen) cada deploy borra la base y con ella el historial, las
+ * derivaciones y los recontactos. Si vas a deployar ahí, montá un volumen y
+ * apuntá SQLITE_PATH adentro.
+ *
+ * Si algún día pasás a Postgres, definí DATABASE_URL y esto lo toma solo.
  */
 function opcionesDb() {
   const url = process.env.DATABASE_URL;
-  const esProduccion = process.env.NODE_ENV === 'production';
 
   if (url) {
     return {
       type: 'postgres' as const,
       url,
       entities: ENTIDADES,
-      synchronize: !esProduccion,
-      ssl: esProduccion ? { rejectUnauthorized: false } : false,
+      synchronize: process.env.NODE_ENV !== 'production',
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
     };
   }
 
@@ -46,8 +61,10 @@ function opcionesDb() {
     // como respaldo para entornos donde se monte con ese nombre.
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env.local', '.env'] }),
     TypeOrmModule.forRoot(opcionesDb()),
+    ScheduleModule.forRoot(),
     AgentConfigModule,
     WebhookModule,
+    FollowupModule,
   ],
 })
 export class AppModule {}

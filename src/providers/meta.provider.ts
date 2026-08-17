@@ -41,7 +41,13 @@ interface EstadoMeta {
   }>;
 }
 
+interface ContactoMeta {
+  wa_id?: string;
+  profile?: { name?: string };
+}
+
 interface ValorCambio {
+  contacts?: ContactoMeta[];
   messages?: MensajeMeta[];
   message_echoes?: MensajeMeta[];
   statuses?: EstadoMeta[];
@@ -93,6 +99,15 @@ export class MetaProvider implements ProveedorWhatsApp {
 
         this.registrarEstados(valor.statuses ?? []);
 
+        // Meta manda el nombre del perfil en "contacts", en paralelo a
+        // "messages": hay que cruzarlos por wa_id.
+        const nombrePorTelefono = new Map<string, string>();
+        for (const contacto of valor.contacts ?? []) {
+          if (contacto.wa_id && contacto.profile?.name) {
+            nombrePorTelefono.set(contacto.wa_id, contacto.profile.name);
+          }
+        }
+
         // --- Mensajes entrantes del cliente ---
         for (const msg of valor.messages ?? []) {
           if (msg.type !== 'text') continue;
@@ -104,6 +119,7 @@ export class MetaProvider implements ProveedorWhatsApp {
             desdePublicidad,
             referralSource: desdePublicidad ? (msg.referral?.source_id ?? '') : '',
             esEchoHumano: false,
+            nombrePerfil: nombrePorTelefono.get(msg.from ?? '') ?? '',
           });
         }
 
@@ -121,6 +137,7 @@ export class MetaProvider implements ProveedorWhatsApp {
               desdePublicidad: false,
               referralSource: '',
               esEchoHumano: true,
+              nombrePerfil: '',
             });
           }
         }

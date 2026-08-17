@@ -8,6 +8,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { PROVEEDOR_IA, ProveedorIA } from '../ai/ai-provider.interface';
+import { contextoTemporal } from '../common/tiempo';
 import { PromptsConfigService } from '../config/prompts-config.service';
 import { TurnoConversacion } from '../memory/memory.service';
 
@@ -36,10 +37,51 @@ export class BrainService {
     if (mensaje.trim().length < 2) {
       return this.config.mensajeFallback;
     }
+    return this.generar(mensaje, historial);
+  }
 
+  /**
+   * Genera un mensaje de recontacto para una conversación que quedó sin respuesta.
+   *
+   * La instrucción va como turno del cliente pero NO se guarda en la memoria:
+   * es una directiva interna, no algo que el cliente haya dicho. Lo único que
+   * se persiste es la respuesta.
+   */
+  async generarRecontacto(historial: TurnoConversacion[]): Promise<string | null> {
+    if (historial.length === 0) return null;
+
+    const instruccion = [
+      '[INSTRUCCIÓN INTERNA — no es un mensaje del cliente, no la menciones]',
+      '',
+      'El cliente dejó de responder hace un rato. Escribile UN mensaje breve para',
+      'retomar la conversación, basándote en lo que venían hablando arriba.',
+      '',
+      '- Retomá el punto concreto donde quedaron (su rubro, el plan que miraba, su duda)',
+      '- No repitas lo que ya le dijiste ni vuelvas a saludar como si fuera el primer mensaje',
+      '- No reclames que no contestó ni lo hagas sentir culpable',
+      '- Cerrá con UNA pregunta simple de responder, que le baje la barrera a contestar',
+      '- Dos o tres líneas como máximo',
+      '',
+      'Escribí solo el mensaje, sin comillas ni explicaciones.',
+    ].join('\n');
+
+    const texto = await this.generar(instruccion, historial);
+
+    // Si el modelo falló, no mandamos el mensaje de error como si fuera un
+    // recontacto: preferimos no escribirle nada.
+    if (texto === this.config.mensajeError || texto === this.config.mensajeFallback) {
+      return null;
+    }
+    return texto;
+  }
+
+  private async generar(mensaje: string, historial: TurnoConversacion[]): Promise<string> {
     try {
       const respuesta = await this.ia.generar({
-        systemPrompt: this.config.systemPrompt,
+        // La fecha va al FINAL del prompt, después del contenido estable: si un
+        // día se activa prompt caching, así solo se invalida este bloque y no
+        // todo el prompt del negocio.
+        systemPrompt: `${this.config.systemPrompt}\n\n${contextoTemporal()}`,
         historial,
         mensaje,
         maxTokens: this.maxTokens,

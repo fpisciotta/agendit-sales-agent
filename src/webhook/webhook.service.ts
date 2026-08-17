@@ -3,6 +3,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { BrainService } from '../brain/brain.service';
+import { desdeHoraNegocio, formatearNegocio, proximoHorarioValido } from '../common/tiempo';
 import { MemoryService } from '../memory/memory.service';
 import {
   MensajeEntrante,
@@ -12,6 +13,14 @@ import {
 
 /** Marca que el agente pone en su respuesta cuando decide pasar a un humano. */
 const MARCA_DERIVAR = '[DERIVAR_A_HUMANO]';
+
+/**
+ * Marca con la que el agente agenda un recontacto futuro.
+ * Formato: [RECONTACTAR: 2026-08-24 09:00 | el Plan Premium para tu consultorio]
+ * La hora se interpreta en hora de Paraguay y se guarda en UTC.
+ */
+const REGEX_RECONTACTAR =
+  /\[RECONTACTAR:\s*(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{1,2}):(\d{2}))?\s*\|\s*([^\]]+)\]/i;
 
 /**
  * Si está en true, el agente solo responde a números que llegaron por
@@ -123,6 +132,43 @@ export class WebhookService {
   }
 
   /**
+   * Detecta la marca [RECONTACTAR: ...], agenda el envío y la saca del texto.
+   * Devuelve la respuesta ya limpia para mandarle al cliente.
+   */
+  private async procesarMarcaRecontacto(respuesta: string, telefono: string): Promise<string> {
+    const match = REGEX_RECONTACTAR.exec(respuesta);
+    if (!match) return respuesta;
+
+    const limpia = respuesta.replace(match[0], '').trim();
+    const [, anio, mes, dia, hora, minuto, contexto] = match;
+
+    // La fecha viene en hora de Paraguay; se convierte a UTC para guardarla.
+    const pedida = desdeHoraNegocio(
+      Number(anio),
+      Number(mes),
+      Number(dia),
+      hora ? Number(hora) : 9,
+      minuto ? Number(minuto) : 0,
+    );
+
+    // Si cae de madrugada, se corre al próximo horario razonable.
+    const fechaEnvio = proximoHorarioValido(pedida);
+
+    if (fechaEnvio.getTime() <= Date.now()) {
+      this.logger.warn(
+        `El agente agendó un recontacto en el pasado (${formatearNegocio(fechaEnvio)}) para ${telefono}, se ignora`,
+      );
+      return limpia;
+    }
+
+    await this.memory.programarRecontacto(telefono, fechaEnvio, contexto.trim());
+    this.logger.log(
+      `Recontacto agendado para ${telefono} el ${formatearNegocio(fechaEnvio)} — ${contexto.trim()}`,
+    );
+    return limpia;
+  }
+
+  /**
    * Avisa al equipo que una conversación quedó esperando respuesta humana.
    *
    * Va por plantilla y no por texto libre a propósito: los números del equipo
@@ -169,6 +215,13 @@ export class WebhookService {
   private async manejarMensajeCliente(msg: MensajeEntrante): Promise<void> {
     this.logger.log(`Mensaje de ${msg.telefono}: ${msg.texto}`);
 
+    // Se registra SIEMPRE, tenga nombre o no y aunque el filtro de leads lo
+    // descarte más abajo: el padrón de contactos es de quién nos escribió.
+    await this.memory.registrarContacto(msg.telefono, msg.nombrePerfil);
+
+    // El cliente escribió: si había un recontacto agendado, ya no hace falta.
+    await this.memory.cancelarProgramados(msg.telefono);
+
     // #on y #off son comandos del EQUIPO, no del cliente. Normalmente se escriben
     // desde la app WhatsApp Business y llegan como eco (ver manejarEchoHumano);
     // acá quedan como respaldo por si alguien los manda desde otro cliente de
@@ -214,6 +267,8 @@ export class WebhookService {
     // El historial se pide ANTES de guardar el mensaje actual: el brain lo agrega.
     const historial = await this.memory.obtenerHistorial(msg.telefono);
     let respuesta = await this.brain.generarRespuesta(msg.texto, historial);
+
+    respuesta = await this.procesarMarcaRecontacto(respuesta, msg.telefono);
 
     if (respuesta.includes(MARCA_DERIVAR)) {
       respuesta = respuesta.replace(MARCA_DERIVAR, '').trim();

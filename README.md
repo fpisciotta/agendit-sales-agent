@@ -223,6 +223,96 @@ llevar todo en el prompt, el camino es una tool de Claude que lea
 `buscar_en_knowledge()` en `tools.py` que nunca se llamaba desde ningún
 módulo; no se portó por eso.
 
+## Deploy en EC2 con PM2
+
+### 1. Dependencias del sistema
+
+`better-sqlite3` compila código nativo al instalarse, así que el servidor
+necesita toolchain. En Amazon Linux 2023:
+
+```bash
+sudo dnf install -y gcc-c++ make python3 git
+curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash - && sudo dnf install -y nodejs
+sudo npm install -g pm2
+```
+
+En Ubuntu es `apt install -y build-essential python3 git` y el equivalente de
+NodeSource. Sin el compilador, `npm ci` falla con un error de `node-gyp` que no
+menciona lo que falta.
+
+### 2. Código y configuración
+
+```bash
+git clone <tu-repo> agendit-sales-agent && cd agendit-sales-agent
+npm ci && npm run build
+```
+
+`.env.local` no está en git: copialo por `scp` o creá uno en el server con las
+mismas variables. Verificá que `NODE_ENV=production`.
+
+### 3. Arrancar
+
+```bash
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup        # imprime un comando con sudo — ejecutalo para sobrevivir reinicios
+```
+
+`pm2 save` sin `pm2 startup` no alcanza: al reiniciar la instancia el agente
+no vuelve solo.
+
+### 4. HTTPS (obligatorio)
+
+Meta **solo acepta webhooks HTTPS con certificado válido**. Necesitás un dominio
+apuntando a la IP elástica de la instancia y nginx delante:
+
+```nginx
+server {
+    server_name agentes.tudominio.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Después `sudo certbot --nginx -d agentes.tudominio.com` para el certificado.
+
+En el Security Group abrí **80 y 443**, y dejá **8000 cerrado**: la app solo se
+alcanza a través de nginx. Si exponés el 8000, cualquiera puede postear eventos
+falsos al webhook.
+
+La Callback URL en Meta queda `https://agentes.tudominio.com/webhook`, y esta vez
+es fija — se termina el ciclo de reeditarla cada vez que reinicia ngrok.
+
+### 5. Backup de la base
+
+SQLite es un solo archivo y ahí vive todo: historial, derivaciones, leads y
+recontactos. Un cron diario alcanza:
+
+```bash
+0 3 * * * sqlite3 /home/ec2-user/agendit-sales-agent/agendit-sales-agent.db ".backup '/home/ec2-user/backups/agente-$(date +\%F).db'"
+```
+
+Usá `.backup` y no `cp`: copiar el archivo con la app escribiendo puede dejarte
+un backup corrupto.
+
+### Comandos del día a día
+
+```bash
+pm2 logs agendit-sales-agent      # ver qué está pasando
+pm2 restart agendit-sales-agent   # después de cambiar .env.local o el prompt
+pm2 status
+```
+
+Ojo con el prompt: `config/prompts.yaml` se lee **una sola vez al arrancar**, así
+que editarlo no tiene efecto hasta el `pm2 restart`.
+
 ## Notas de operación
 
 - **`SOLO_LEADS_PUBLICIDAD=true`** (por defecto) hace que el agente responda

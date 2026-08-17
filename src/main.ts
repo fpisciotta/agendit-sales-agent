@@ -1,9 +1,16 @@
 // src/main.ts — Arranque del servidor
 
+// TODO lo que se guarda en la base va en UTC, sin importar dónde corra el
+// proceso. Esto tiene que ejecutarse ANTES de importar cualquier módulo que
+// cree fechas, por eso está arriba de los imports y no dentro de bootstrap().
+// La hora de Paraguay se aplica solo en los bordes (ver src/common/tiempo.ts).
+process.env.TZ = 'UTC';
+
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from './app.module';
+import { TZ_NEGOCIO, formatearNegocio } from './common/tiempo';
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
@@ -19,6 +26,9 @@ async function bootstrap(): Promise<void> {
 
   // El proveedor de IA y su modelo los loguea AiModule al resolverse.
   logger.log(`Agendit Sales Agent escuchando en el puerto ${puerto}`);
+  logger.log(
+    `Base en UTC · zona del negocio: ${TZ_NEGOCIO} (ahora son las ${formatearNegocio(new Date())})`,
+  );
 
   const proveedor = (process.env.AI_PROVIDER ?? 'gemini').toLowerCase();
   const claveFaltante =

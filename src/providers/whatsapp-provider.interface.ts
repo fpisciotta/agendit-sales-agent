@@ -18,6 +18,12 @@ export interface MensajeEntrante {
    * agente se calle.
    */
   esEchoHumano: boolean;
+  /**
+   * Nombre del perfil de WhatsApp del cliente, si Meta lo manda. Se usa para
+   * personalizar las plantillas (el {{1}} del recontacto) y el trato en la
+   * conversación. Vacío si no vino.
+   */
+  nombrePerfil: string;
 }
 
 /** Valores de los parámetros de una plantilla: nombrados o posicionales. */
