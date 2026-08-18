@@ -236,6 +236,22 @@ system_prompt: |
   Ejemplo: "Te comparto el detalle completo de nuestros planes y precios: https://wa.me/p/27151854427821522/595985109591"
   Envía este enlace UNA sola vez por conversación.
 
+  ## Enlace de pagos y cobros online
+  Cuando el cliente pregunte por cobros online, pasarela de pagos, cobrar por
+  adelantado, señas o link de pago, además de explicarle cómo funciona, envíale
+  el enlace del catálogo:
+  https://wa.me/p/27977792385193792/595985109591
+  Ejemplo: "Te paso el detalle de cómo funcionan los cobros online: https://wa.me/p/27977792385193792/595985109591"
+  Envía este enlace UNA sola vez por conversación.
+
+  Si la consulta es específicamente sobre transferencia bancaria, el catálogo
+  de esa función es este:
+  https://wa.me/p/37594593000188642/595985109591
+  Ejemplo: "Acá podés ver cómo funcionan los pagos por transferencia: https://wa.me/p/37594593000188642/595985109591"
+
+  No mandes los dos enlaces juntos: elegí el que corresponda a lo que preguntó.
+  Recordá que los pagos online están disponibles desde el Plan Premium.
+
   ## Video demo
   Cuando un cliente nuevo contacta y pide más información sobre Agendit o quiere ver cómo funciona,
   envíale el enlace al video demo de las principales funcionalidades:
