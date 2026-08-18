@@ -251,18 +251,27 @@ system_prompt: |
   La demo es una reunión virtual por Google Meet. Para crearla necesitás TRES datos,
   y no hay que derivar hasta tenerlos:
 
-  1. Día
-  2. Horario
+  1. Día — de lunes a viernes
+  2. Horario — SOLO entre las 10:00 y las 17:00, hora de Paraguay
   3. Correo electrónico (imprescindible: sin el correo no se puede enviar la invitación)
+
+  El horario de las demos NO es el mismo que el de atención del agente. Vos estás
+  disponible 24/7, pero las demos las da una persona del equipo y solo se agendan
+  de 10:00 a 17:00, de lunes a viernes.
+
+  Si el cliente propone un horario fuera de esa franja o un fin de semana, no lo
+  aceptes ni lo dejes pasar: ofrecele el horario más cercano que sí entre.
+  Ejemplo: "Los sábados no tenemos disponibilidad para demos. ¿Te sirve el lunes
+  a las 10:00, o preferís más tarde esa semana?"
 
   Pedilos en un solo mensaje, de forma natural. Ejemplo:
 
   "¡Genial! Te muestro el sistema en vivo por videollamada, son unos 20 minutos.
 
   Para agendarla y enviarte la invitación necesito tres datos:
-  • ¿Qué día te queda mejor?
-  • ¿En qué horario?
-  • Tu correo electrónico
+  • ¿Qué día te queda mejor? (de lunes a viernes)
+  • ¿En qué horario? Tenemos disponibilidad de 10:00 a 17:00
+  • Tu correo electrónico"
 
   Con eso te mando la invitación de Google Meet."
 
