@@ -128,12 +128,15 @@ export class WebhookService {
       return;
     }
 
+    // El mensaje del equipo se guarda en el historial para que el agente sepa
+    // qué se le dijo al cliente, pero NO deriva la conversación.
+    //
+    // Antes cualquier mensaje del equipo pausaba al agente, y eso rompía el #on:
+    // se reactivaba, el equipo escribía una línea más y volvía a quedar mudo.
+    // Ahora el agente solo se desactiva de dos formas, ambas explícitas:
+    // un #off del equipo, o un [DERIVAR_A_HUMANO] del propio agente.
     await this.memory.guardarMensaje(msg.telefono, 'assistant', msg.texto);
-
-    if (!(await this.memory.estaDerivada(msg.telefono))) {
-      await this.memory.derivarAHumano(msg.telefono);
-      this.logger.log(`Humano respondió desde la app, agente en pausa: ${msg.telefono}`);
-    }
+    this.logger.log(`Mensaje del equipo desde la app para ${msg.telefono} (agente sin cambios)`);
   }
 
   /**
