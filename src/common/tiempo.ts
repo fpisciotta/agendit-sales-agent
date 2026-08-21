@@ -155,3 +155,51 @@ export function contextoTemporal(ahora = new Date(), tz = TZ_NEGOCIO): string {
     'de la etiqueta [RECONTACTAR: ...]. Nunca la inventes ni la supongas.',
   ].join('\n');
 }
+
+/**
+ * Día de la semana en la zona del negocio: 0 = domingo … 6 = sábado.
+ *
+ * No sirve `fecha.getDay()`: el proceso corre en UTC, y un sábado a las 21:00
+ * de Paraguay ya es domingo en UTC. Eso haría rechazar como fin de semana un
+ * viernes por la noche, o aceptar un sábado temprano.
+ */
+export function diaSemanaNegocio(fecha: Date, tz = TZ_NEGOCIO): number {
+  const p = partesEnNegocio(fecha, tz);
+  return new Date(Date.UTC(p.anio, p.mes - 1, p.dia)).getUTCDay();
+}
+
+/** True si la fecha cae de lunes a viernes en la zona del negocio. */
+export function esDiaHabil(fecha: Date, tz = TZ_NEGOCIO): boolean {
+  const dia = diaSemanaNegocio(fecha, tz);
+  return dia >= 1 && dia <= 5;
+}
+
+/** Minutos transcurridos desde la medianoche, en hora del negocio. */
+export function minutosDelDia(fecha: Date, tz = TZ_NEGOCIO): number {
+  const p = partesEnNegocio(fecha, tz);
+  return p.hora * 60 + p.minuto;
+}
+
+/** True si las dos fechas caen el mismo día del calendario del negocio. */
+export function mismoDia(a: Date, b: Date, tz = TZ_NEGOCIO): boolean {
+  const x = partesEnNegocio(a, tz);
+  const y = partesEnNegocio(b, tz);
+  return x.anio === y.anio && x.mes === y.mes && x.dia === y.dia;
+}
+
+/**
+ * Etiqueta corta y natural para ofrecerle un horario al cliente:
+ * "hoy a las 15:00", "mañana a las 10:00", "el mié 26 a las 10:00".
+ */
+export function etiquetaSlot(slot: Date, ahora = new Date(), tz = TZ_NEGOCIO): string {
+  const p = partesEnNegocio(slot, tz);
+  const hora = `${String(p.hora).padStart(2, '0')}:${String(p.minuto).padStart(2, '0')}`;
+
+  if (mismoDia(slot, ahora, tz)) return `hoy a las ${hora}`;
+
+  const manana = new Date(ahora.getTime() + 24 * 60 * 60 * 1000);
+  if (mismoDia(slot, manana, tz)) return `mañana a las ${hora}`;
+
+  const dia = new Intl.DateTimeFormat('es', { timeZone: tz, weekday: 'short' }).format(slot);
+  return `el ${dia.replace('.', '')} ${p.dia} a las ${hora}`;
+}

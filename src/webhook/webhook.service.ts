@@ -3,7 +3,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { BrainService } from '../brain/brain.service';
-import { CalendarService } from '../calendar/calendar.service';
+import {
+  CalendarService,
+  RazonRechazo,
+  descripcionFranjas,
+} from '../calendar/calendar.service';
 import { desdeHoraNegocio, formatearNegocio, proximoHorarioValido } from '../common/tiempo';
 import { MemoryService } from '../memory/memory.service';
 import {
@@ -158,6 +162,22 @@ export class WebhookService {
    * escribió el agente, y es a propósito: el agente no puede saber la
    * disponibilidad real, así que su confirmación sería una promesa falsa.
    */
+  /** Qué decirle al cliente según por qué no se pudo agendar ese horario. */
+  private excusaSegunRazon(razon?: RazonRechazo): string {
+    switch (razon) {
+      case 'ocupado':
+        return 'Justo a esa hora ya tengo otra demo agendada.';
+      case 'fin-de-semana':
+        return 'Las demos las damos de lunes a viernes.';
+      case 'fuera-de-franja':
+        return `Ese horario me queda fuera: damos demos ${descripcionFranjas()}.`;
+      case 'muy-pronto':
+        return 'Para esa hora ya no llego a prepararla.';
+      default:
+        return 'No puedo agendarte a esa hora.';
+    }
+  }
+
   private async procesarMarcaDemo(respuesta: string, telefono: string): Promise<string> {
     const match = REGEX_DEMO.exec(respuesta);
     if (!match) return respuesta;
@@ -173,12 +193,7 @@ export class WebhookService {
       Number(minuto),
     );
 
-    if (inicio.getTime() <= Date.now()) {
-      this.logger.warn(
-        `Demo agendada en el pasado (${formatearNegocio(inicio)}) para ${telefono}, se ignora`,
-      );
-      return limpia;
-    }
+    this.logger.log(`Pedido de demo de ${telefono} para ${formatearNegocio(inicio)} (${email})`);
 
     const nombre = await this.memory.obtenerNombre(telefono);
     const resultado = await this.calendar.agendarDemo({
@@ -204,18 +219,19 @@ export class WebhookService {
       return `${limpia}${meet}`;
     }
 
-    if (resultado.alternativas && resultado.alternativas.length > 0) {
-      return (
-        `Justo a esa hora ya tengo otra demo agendada. ` +
-        `Ese mismo día me queda libre a las ${resultado.alternativas.join(', ')}. ` +
-        `¿Alguno te sirve, o preferís otro día?`
-      );
-    }
-
+    // El horario no sirvió. Se reescribe la respuesta del agente porque él no
+    // conoce la agenda real: si confirma un horario ocupado o fuera de rango,
+    // le está prometiendo al cliente algo que no existe.
     if (resultado.alternativas) {
+      const excusa = this.excusaSegunRazon(resultado.razon);
+
+      if (resultado.alternativas.length > 0) {
+        return `${excusa} Te puedo ofrecer ${resultado.alternativas.join(', ')}. ¿Cuál te viene mejor?`;
+      }
+
       return (
-        `Ese día ya lo tengo completo. ¿Qué otro día te viene bien? ` +
-        `Damos demos de lunes a viernes, de 10:00 a 17:00.`
+        `${excusa} Damos demos de lunes a viernes, ${descripcionFranjas()}. ` +
+        `¿Qué día te viene bien?`
       );
     }
 

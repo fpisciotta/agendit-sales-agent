@@ -18,21 +18,87 @@ import { Injectable, Logger } from '@nestjs/common';
 // lo que revienta el build en servidores chicos.
 import { auth as googleAuth, calendar as googleCalendar, calendar_v3 } from '@googleapis/calendar';
 
-import { TZ_NEGOCIO, desdeHoraNegocio, formatearNegocio, partesEnNegocio } from '../common/tiempo';
+import {
+  TZ_NEGOCIO,
+  desdeHoraNegocio,
+  esDiaHabil,
+  etiquetaSlot,
+  formatearNegocio,
+  minutosDelDia,
+  partesEnNegocio,
+} from '../common/tiempo';
 
 const SCOPES = ['https://www.googleapis.com/auth/calendar'];
 
-/** Franja en la que se dan demos, hora de Paraguay. */
-export const DEMO_HORA_MIN = Number(process.env.DEMO_HORA_MIN ?? 10);
-export const DEMO_HORA_MAX = Number(process.env.DEMO_HORA_MAX ?? 17);
+/** Una franja horaria de atención, en minutos desde la medianoche. */
+interface Franja {
+  desde: number;
+  hasta: number;
+}
+
+/** "13" o "13:30" → minutos desde la medianoche. */
+function aMinutos(valor: string): number {
+  const [h, m] = valor.trim().split(':');
+  return Number(h) * 60 + Number(m ?? 0);
+}
+
+/** "10-12,13-17" → [{desde:600,hasta:720},{desde:780,hasta:1020}] */
+function parsearFranjas(texto: string): Franja[] {
+  return texto
+    .split(',')
+    .map((tramo) => tramo.trim())
+    .filter(Boolean)
+    .map((tramo) => {
+      const [a, b] = tramo.split('-');
+      return { desde: aMinutos(a), hasta: aMinutos(b) };
+    })
+    .filter((f) => f.hasta > f.desde)
+    .sort((x, y) => x.desde - y.desde);
+}
+
+/**
+ * Franjas en las que se dan demos, hora de Paraguay. El corte del mediodía es
+ * el almuerzo: no se agenda entre las 12 y las 13.
+ */
+export const DEMO_FRANJAS: Franja[] = parsearFranjas(process.env.DEMO_FRANJAS ?? '10-12,13-17');
+
+/** Duración de cada demo. También es el paso con el que se ofrecen horarios. */
 export const DEMO_DURACION_MIN = Number(process.env.DEMO_DURACION_MIN ?? 30);
+
+/**
+ * Anticipación mínima para una demo de hoy. Sin esto, un cliente que escribe
+ * a las 14:58 puede agendar a las 15:00 y agarrar al equipo desprevenido.
+ */
+export const DEMO_ANTICIPACION_MIN = Number(process.env.DEMO_ANTICIPACION_MIN ?? 30);
+
+/** "de 10:00 a 12:00 y de 13:00 a 17:00" — para los mensajes al cliente. */
+export function descripcionFranjas(): string {
+  const hhmm = (min: number) =>
+    `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+  const tramos = DEMO_FRANJAS.map((f) => `de ${hhmm(f.desde)} a ${hhmm(f.hasta)}`);
+  if (tramos.length <= 1) return tramos[0] ?? '';
+  return `${tramos.slice(0, -1).join(', ')} y ${tramos[tramos.length - 1]}`;
+}
+
+/** Días hacia adelante que se miran al buscar horarios alternativos. */
+const DIAS_A_EXPLORAR = 10;
+
+/** Por qué no se pudo agendar. El webhook elige el mensaje según esto. */
+export type RazonRechazo =
+  | 'ocupado'
+  | 'fin-de-semana'
+  | 'fuera-de-franja'
+  | 'muy-pronto'
+  | 'sin-configurar'
+  | 'error';
 
 export interface ResultadoDemo {
   ok: boolean;
   /** Enlace de Google Meet, cuando el evento se creó. */
   meetUrl?: string;
-  /** Alternativas en hora de Paraguay ("14:00"), cuando el horario estaba ocupado. */
+  /** Horarios para ofrecerle al cliente, ya en lenguaje natural. */
   alternativas?: string[];
+  razon?: RazonRechazo;
   motivo?: string;
 }
 
@@ -51,11 +117,11 @@ export class CalendarService {
   }
 
   /**
-   * Agenda la demo si el horario está libre.
+   * Agenda la demo si el horario es válido y está libre.
    *
-   * Si está ocupado NO agenda: devuelve alternativas del mismo día para que el
-   * agente se las ofrezca. Es preferible a superponer dos demos y que alguien
-   * las tenga que reacomodar a mano.
+   * Cuando no se puede, NO agenda: devuelve alternativas reales para que el
+   * agente se las ofrezca. Es preferible a superponer dos demos, o a aceptar
+   * un horario en el que no hay nadie, y que después alguien lo reacomode.
    */
   async agendarDemo(params: {
     inicio: Date;
@@ -63,22 +129,42 @@ export class CalendarService {
     nombreCliente?: string;
     telefono: string;
   }): Promise<ResultadoDemo> {
+    const { inicio, emailCliente, nombreCliente, telefono } = params;
+
     if (!this.habilitado) {
-      return { ok: false, motivo: 'Google Calendar no configurado' };
+      // Ruidoso a propósito: sin esto la demo falla en silencio y el único
+      // rastro es que el agente deriva al equipo sin motivo aparente.
+      this.logger.error(
+        `NO se pudo agendar la demo de ${telefono}: Google Calendar sin configurar` +
+          ` (GOOGLE_SERVICE_ACCOUNT_JSON=${this.credenciales ? 'ok' : 'FALTA'},` +
+          ` GOOGLE_IMPERSONATE_EMAIL=${this.impersonar || 'FALTA'})`,
+      );
+      return { ok: false, razon: 'sin-configurar', motivo: 'Google Calendar no configurado' };
     }
 
-    const { inicio, emailCliente, nombreCliente, telefono } = params;
     const fin = new Date(inicio.getTime() + DEMO_DURACION_MIN * 60_000);
 
     try {
-      const ocupados = await this.rangosOcupados(this.inicioDelDia(inicio), this.finDelDia(inicio));
-
-      if (this.seSuperpone(inicio, fin, ocupados)) {
-        const alternativas = this.slotsLibres(inicio, ocupados);
+      // 1. ¿El horario pedido es uno en el que damos demos?
+      const rechazo = this.validarHorario(inicio);
+      if (rechazo) {
+        const alternativas = await this.proximosLibres(inicio);
         this.logger.log(
-          `Demo ocupada el ${formatearNegocio(inicio)} para ${telefono}, ofrezco: ${alternativas.join(', ') || 'ninguna'}`,
+          `Demo de ${telefono} el ${formatearNegocio(inicio)} rechazada (${rechazo}), ` +
+            `ofrezco: ${alternativas.join(' / ') || 'ninguna'}`,
         );
-        return { ok: false, alternativas, motivo: 'horario ocupado' };
+        return { ok: false, razon: rechazo, alternativas };
+      }
+
+      // 2. ¿Está libre la agenda?
+      const ocupados = await this.rangosOcupados(this.inicioDelDia(inicio), this.finDelDia(inicio));
+      if (this.seSuperpone(inicio, fin, ocupados)) {
+        const alternativas = await this.proximosLibres(inicio);
+        this.logger.log(
+          `Demo ocupada el ${formatearNegocio(inicio)} para ${telefono}, ` +
+            `ofrezco: ${alternativas.join(' / ') || 'ninguna'}`,
+        );
+        return { ok: false, razon: 'ocupado', alternativas };
       }
 
       const calendar = await this.obtenerCliente();
@@ -128,8 +214,69 @@ export class CalendarService {
       return { ok: true, meetUrl };
     } catch (error) {
       this.logger.error(`Error agendando la demo de ${telefono}: ${(error as Error).message}`);
-      return { ok: false, motivo: (error as Error).message };
+      return { ok: false, razon: 'error', motivo: (error as Error).message };
     }
+  }
+
+  // --- Reglas de horario ---
+
+  /** Devuelve el motivo del rechazo, o null si el horario sirve. */
+  private validarHorario(inicio: Date): RazonRechazo | null {
+    if (inicio.getTime() < Date.now() + DEMO_ANTICIPACION_MIN * 60_000) return 'muy-pronto';
+    if (!esDiaHabil(inicio)) return 'fin-de-semana';
+    if (!this.entraEnFranja(inicio)) return 'fuera-de-franja';
+    return null;
+  }
+
+  /** La demo entera tiene que caber en una franja, no solo empezar dentro. */
+  private entraEnFranja(inicio: Date): boolean {
+    const arranca = minutosDelDia(inicio);
+    const termina = arranca + DEMO_DURACION_MIN;
+    return DEMO_FRANJAS.some((f) => arranca >= f.desde && termina <= f.hasta);
+  }
+
+  /**
+   * Los próximos horarios libres a partir de la fecha pedida, mirando varios
+   * días hacia adelante. Explora días porque el rechazo puede ser justamente
+   * que el día pedido no sirve: un sábado, o un lunes ya completo.
+   */
+  private async proximosLibres(referencia: Date): Promise<string[]> {
+    const ahora = new Date();
+    // Nunca ofrecer algo anterior a ahora, aunque hayan pedido una fecha pasada.
+    const desde = referencia.getTime() > ahora.getTime() ? referencia : ahora;
+    const p = partesEnNegocio(desde);
+
+    const ventanaFin = desdeHoraNegocio(p.anio, p.mes, p.dia + DIAS_A_EXPLORAR, 0, 0);
+    const ocupados = await this.rangosOcupados(this.inicioDelDia(desde), ventanaFin);
+
+    const libres: string[] = [];
+
+    for (let offset = 0; offset < DIAS_A_EXPLORAR && libres.length < 3; offset++) {
+      // Mediodía como referencia del día: lejos de cualquier borde de horario
+      // de verano, que podría correr la fecha al convertir.
+      const dia = desdeHoraNegocio(p.anio, p.mes, p.dia + offset, 12, 0);
+      if (!esDiaHabil(dia)) continue;
+
+      const dp = partesEnNegocio(dia);
+
+      for (const franja of DEMO_FRANJAS) {
+        for (
+          let min = franja.desde;
+          min + DEMO_DURACION_MIN <= franja.hasta && libres.length < 3;
+          min += DEMO_DURACION_MIN
+        ) {
+          const slot = desdeHoraNegocio(dp.anio, dp.mes, dp.dia, Math.floor(min / 60), min % 60);
+          const finSlot = new Date(slot.getTime() + DEMO_DURACION_MIN * 60_000);
+
+          if (this.validarHorario(slot)) continue; // respeta la anticipación mínima
+          if (this.seSuperpone(slot, finSlot, ocupados)) continue;
+
+          libres.push(etiquetaSlot(slot, ahora));
+        }
+      }
+    }
+
+    return libres;
   }
 
   // --- Internos ---
@@ -175,22 +322,6 @@ export class CalendarService {
     const i = inicio.getTime();
     const f = fin.getTime();
     return ocupados.some((r) => i < r.f && f > r.i);
-  }
-
-  /** Horarios libres del mismo día, dentro de la franja de demos. */
-  private slotsLibres(referencia: Date, ocupados: Array<{ i: number; f: number }>): string[] {
-    const p = partesEnNegocio(referencia);
-    const libres: string[] = [];
-    const ahora = Date.now();
-
-    for (let hora = DEMO_HORA_MIN; hora < DEMO_HORA_MAX; hora++) {
-      const inicio = desdeHoraNegocio(p.anio, p.mes, p.dia, hora, 0);
-      const fin = new Date(inicio.getTime() + DEMO_DURACION_MIN * 60_000);
-      if (inicio.getTime() <= ahora) continue; // ya pasó
-      if (this.seSuperpone(inicio, fin, ocupados)) continue;
-      libres.push(`${String(hora).padStart(2, '0')}:00`);
-    }
-    return libres.slice(0, 3);
   }
 
   private inicioDelDia(fecha: Date): Date {
