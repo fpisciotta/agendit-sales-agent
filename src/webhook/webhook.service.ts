@@ -8,7 +8,12 @@ import {
   RazonRechazo,
   descripcionFranjas,
 } from '../calendar/calendar.service';
-import { desdeHoraNegocio, formatearNegocio, proximoHorarioValido } from '../common/tiempo';
+import {
+  desdeHoraNegocio,
+  formatearCita,
+  formatearNegocio,
+  proximoHorarioValido,
+} from '../common/tiempo';
 import { MemoryService } from '../memory/memory.service';
 import {
   MensajeEntrante,
@@ -54,6 +59,13 @@ const NUMEROS_NOTIFICACION = (process.env.NUMEROS_NOTIFICACION ?? '595972511222,
 /** Plantilla aprobada que avisa al equipo. Recibe el número del cliente en el body. */
 const PLANTILLA_NOTIFICACION = process.env.PLANTILLA_NOTIFICACION ?? 'sales_agent_notification';
 const IDIOMA_NOTIFICACION = process.env.PLANTILLA_NOTIFICACION_IDIOMA ?? 'es';
+
+/**
+ * Aviso específico de cita agendada. Tres parámetros posicionales:
+ * {{1}} teléfono del cliente, {{2}} fecha y hora, {{3}} enlace de Meet.
+ */
+const PLANTILLA_CITA = process.env.PLANTILLA_CITA ?? 'sales_agent_appointment';
+const IDIOMA_CITA = process.env.PLANTILLA_CITA_IDIOMA ?? IDIOMA_NOTIFICACION;
 
 /**
  * Mensajes que hacen que el agente atienda aunque el número no venga marcado
@@ -212,8 +224,9 @@ export class WebhookService {
       // Acá se notifica SIEMPRE, sin pasar por registrarNotificacion(). Ese
       // control manda un solo aviso por cliente, y una reunión agendada tiene
       // que avisarse aunque a ese cliente ya se lo hubiera derivado antes.
+      // Se marca igual para que una derivación posterior no repita el genérico.
       await this.memory.registrarNotificacion(telefono);
-      await this.notificarEquipo(telefono);
+      await this.notificarCita(telefono, inicio, resultado.meetUrl);
 
       const meet = resultado.meetUrl ? `\n\nEl enlace de la videollamada: ${resultado.meetUrl}` : '';
       return `${limpia}${meet}`;
@@ -291,6 +304,50 @@ export class WebhookService {
    * Un fallo acá no puede tumbar la conversación con el cliente: si la
    * notificación no sale, se loguea y el flujo sigue.
    */
+  /**
+   * Avisa al equipo que se agendó una demo, con el enlace de Meet.
+   *
+   * Va por plantilla y no por texto libre porque el equipo puede llevar días
+   * sin escribirle al agente, y fuera de la ventana de 24 h de WhatsApp un
+   * mensaje libre se acepta pero no se entrega.
+   */
+  private async notificarCita(
+    telefonoCliente: string,
+    inicio: Date,
+    meetUrl?: string,
+  ): Promise<void> {
+    if (NUMEROS_NOTIFICACION.length === 0) return;
+
+    const parametros = [
+      `+${telefonoCliente}`,
+      formatearCita(inicio),
+      meetUrl ?? 'sin enlace disponible',
+    ];
+
+    const resultados = await Promise.allSettled(
+      NUMEROS_NOTIFICACION.map((destino) =>
+        this.proveedor.enviarPlantilla(destino, PLANTILLA_CITA, {
+          parametros,
+          idioma: IDIOMA_CITA,
+        }),
+      ),
+    );
+
+    resultados.forEach((resultado, i) => {
+      const destino = NUMEROS_NOTIFICACION[i];
+      if (resultado.status === 'fulfilled' && resultado.value) {
+        this.logger.log(`Equipo avisado de la cita (${destino}) del cliente ${telefonoCliente}`);
+      } else {
+        const motivo =
+          resultado.status === 'rejected'
+            ? (resultado.reason as Error).message
+            : 'la API rechazó el envío';
+        // Se registra fuerte: la cita existe igual, pero nadie del equipo se enteró.
+        this.logger.error(`No se pudo avisar de la cita a ${destino}: ${motivo}`);
+      }
+    });
+  }
+
   private async notificarEquipo(telefonoCliente: string): Promise<void> {
     if (NUMEROS_NOTIFICACION.length === 0) return;
 

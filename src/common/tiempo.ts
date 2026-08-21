@@ -203,3 +203,18 @@ export function etiquetaSlot(slot: Date, ahora = new Date(), tz = TZ_NEGOCIO): s
   const dia = new Intl.DateTimeFormat('es', { timeZone: tz, weekday: 'short' }).format(slot);
   return `el ${dia.replace('.', '')} ${p.dia} a las ${hora}`;
 }
+
+/**
+ * Fecha y hora para un mensaje al equipo: "lunes 24/08 a las 14:00".
+ *
+ * Distinto de formatearNegocio(), que da el formato técnico para los logs.
+ * Acá el destinatario es una persona leyendo WhatsApp de apuro.
+ */
+export function formatearCita(fecha: Date, tz = TZ_NEGOCIO): string {
+  const p = partesEnNegocio(fecha, tz);
+  const dia = new Intl.DateTimeFormat('es', { timeZone: tz, weekday: 'long' }).format(fecha);
+  const dd = String(p.dia).padStart(2, '0');
+  const mm = String(p.mes).padStart(2, '0');
+  const hora = `${String(p.hora).padStart(2, '0')}:${String(p.minuto).padStart(2, '0')}`;
+  return `${dia} ${dd}/${mm} a las ${hora}`;
+}

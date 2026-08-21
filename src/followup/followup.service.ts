@@ -26,7 +26,7 @@ const MAX_POR_CORRIDA = Number(process.env.RECONTACTO_MAX_POR_CORRIDA ?? 20);
 const ACTIVO = process.env.RECONTACTO_ACTIVO !== 'false';
 
 /** Plantilla para los recontactos agendados a fecha futura (fuera de la ventana de 24 h). */
-const PLANTILLA_RECONTACTO = process.env.PLANTILLA_RECONTACTO ?? 'sales_agent_recontactv2';
+const PLANTILLA_RECONTACTO = process.env.PLANTILLA_RECONTACTO ?? 'recontact';
 const IDIOMA_RECONTACTO = process.env.PLANTILLA_RECONTACTO_IDIOMA ?? 'es';
 
 @Injectable()
