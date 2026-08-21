@@ -3,6 +3,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { BrainService } from '../brain/brain.service';
+import { SOLO_LEADS_PUBLICIDAD } from '../common/flags';
 import {
   CalendarService,
   RazonRechazo,
@@ -40,12 +41,6 @@ const REGEX_DEMO =
 const REGEX_RECONTACTAR =
   /\[RECONTACTAR:\s*(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{1,2}):(\d{2}))?\s*\|\s*([^\]]+)\]/i;
 
-/**
- * Si está en true, el agente solo responde a números que llegaron por
- * publicidad paga (Click-to-WhatsApp). Poné SOLO_LEADS_PUBLICIDAD=false
- * para atender a cualquiera — necesario para probar desde tu propio celular.
- */
-const SOLO_LEADS_PUBLICIDAD = process.env.SOLO_LEADS_PUBLICIDAD !== 'false';
 
 /**
  * Números del equipo que reciben el aviso cuando una conversación se deriva.
@@ -161,6 +156,15 @@ export class WebhookService {
     // se reactivaba, el equipo escribía una línea más y volvía a quedar mudo.
     // Ahora el agente solo se desactiva de dos formas, ambas explícitas:
     // un #off del equipo, o un [DERIVAR_A_HUMANO] del propio agente.
+    // Si es un número que el agente no atiende, no se guarda nada. Guardarlo
+    // tenía dos efectos malos: llenaba la base de conversaciones del equipo, y
+    // dejaba un historial cuyo último mensaje es 'assistant' — justo la forma
+    // que el recontacto de la hora busca para escribirle a alguien.
+    if (SOLO_LEADS_PUBLICIDAD && !(await this.memory.esLeadPublicidad(msg.telefono))) {
+      this.logger.log(`Eco del equipo para ${msg.telefono}: no es lead, no se guarda`);
+      return;
+    }
+
     await this.memory.guardarMensaje(msg.telefono, 'assistant', msg.texto);
     this.logger.log(`Mensaje del equipo desde la app para ${msg.telefono} (agente sin cambios)`);
   }

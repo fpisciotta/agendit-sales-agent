@@ -4,6 +4,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
+import { SOLO_LEADS_PUBLICIDAD } from '../common/flags';
 import { Cliente } from './entities/cliente.entity';
 import { Derivacion } from './entities/derivacion.entity';
 import { LeadPublicidad } from './entities/lead-publicidad.entity';
@@ -215,6 +216,12 @@ export class MemoryService {
 
       if (await this.estaDerivada(telefono)) continue;
       if (await this.yaSeRecontacto(telefono)) continue;
+
+      // Mismo criterio que para responder: si el agente no atiende a este
+      // número, tampoco tiene por qué escribirle primero. Sin esto, cualquier
+      // conversación guardada — incluidas las del propio equipo — recibía el
+      // recontacto de la hora.
+      if (SOLO_LEADS_PUBLICIDAD && !(await this.esLeadPublicidad(telefono))) continue;
 
       candidatos.push(telefono);
     }

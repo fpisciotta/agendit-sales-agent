@@ -4,6 +4,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
 import { BrainService } from '../brain/brain.service';
+import { SOLO_LEADS_PUBLICIDAD } from '../common/flags';
 import { HORA_MAX, HORA_MIN, enHorarioComercial, formatearNegocio } from '../common/tiempo';
 import { MemoryService } from '../memory/memory.service';
 import { PROVEEDOR_WHATSAPP, ProveedorWhatsApp } from '../providers/whatsapp-provider.interface';
@@ -112,6 +113,14 @@ export class FollowupService {
         if (await this.memory.estaDerivada(telefono)) {
           await this.memory.marcarProgramadoEnviado(id);
           this.logger.log(`Recontacto de ${telefono} cancelado: la conversación está derivada`);
+          continue;
+        }
+
+        // Mismo criterio que en todo el resto: al que el agente no atiende,
+        // tampoco le escribe primero.
+        if (SOLO_LEADS_PUBLICIDAD && !(await this.memory.esLeadPublicidad(telefono))) {
+          await this.memory.marcarProgramadoEnviado(id);
+          this.logger.log(`Recontacto de ${telefono} cancelado: no es lead de publicidad`);
           continue;
         }
 
