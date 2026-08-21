@@ -13,7 +13,10 @@
 //   4. GOOGLE_IMPERSONATE_EMAIL = la persona del dominio dueña del calendario
 
 import { Injectable, Logger } from '@nestjs/common';
-import { calendar_v3, google } from 'googleapis';
+// Solo el paquete de Calendar, NO el 'googleapis' completo: ese trae los tipos
+// de cientos de APIs de Google y hace que tsc se coma más de 1 GB compilando,
+// lo que revienta el build en servidores chicos.
+import { auth as googleAuth, calendar as googleCalendar, calendar_v3 } from '@googleapis/calendar';
 
 import { TZ_NEGOCIO, desdeHoraNegocio, formatearNegocio, partesEnNegocio } from '../common/tiempo';
 
@@ -139,7 +142,7 @@ export class CalendarService {
       ? JSON.parse(this.credenciales)
       : JSON.parse((await import('node:fs')).readFileSync(this.credenciales, 'utf8'));
 
-    const auth = new google.auth.JWT({
+    const auth = new googleAuth.JWT({
       email: credenciales.client_email,
       key: credenciales.private_key,
       scopes: SCOPES,
@@ -147,7 +150,7 @@ export class CalendarService {
       subject: this.impersonar,
     });
 
-    this.cliente = google.calendar({ version: 'v3', auth });
+    this.cliente = googleCalendar({ version: 'v3', auth });
     return this.cliente;
   }
 
