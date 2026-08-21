@@ -3,6 +3,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { BrainService } from '../brain/brain.service';
+import { CalendarService } from '../calendar/calendar.service';
 import { desdeHoraNegocio, formatearNegocio, proximoHorarioValido } from '../common/tiempo';
 import { MemoryService } from '../memory/memory.service';
 import {
@@ -19,6 +20,14 @@ const MARCA_DERIVAR = '[DERIVAR_A_HUMANO]';
  * Formato: [RECONTACTAR: 2026-08-24 09:00 | el Plan Premium para tu consultorio]
  * La hora se interpreta en hora de Paraguay y se guarda en UTC.
  */
+/**
+ * Marca con la que el agente agenda la demo.
+ * Formato: [AGENDAR_DEMO: 2026-08-24 14:00 | cliente@mail.com]
+ * La hora se interpreta en hora de Paraguay.
+ */
+const REGEX_DEMO =
+  /\[AGENDAR_DEMO:\s*(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})\s*\|\s*([^\]\s]+)\]/i;
+
 const REGEX_RECONTACTAR =
   /\[RECONTACTAR:\s*(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{1,2}):(\d{2}))?\s*\|\s*([^\]]+)\]/i;
 
@@ -82,6 +91,7 @@ export class WebhookService {
     @Inject(PROVEEDOR_WHATSAPP) private readonly proveedor: ProveedorWhatsApp,
     private readonly brain: BrainService,
     private readonly memory: MemoryService,
+    private readonly calendar: CalendarService,
   ) {}
 
   async procesar(body: unknown): Promise<void> {
@@ -137,6 +147,85 @@ export class WebhookService {
     // un #off del equipo, o un [DERIVAR_A_HUMANO] del propio agente.
     await this.memory.guardarMensaje(msg.telefono, 'assistant', msg.texto);
     this.logger.log(`Mensaje del equipo desde la app para ${msg.telefono} (agente sin cambios)`);
+  }
+
+  /**
+   * Detecta [AGENDAR_DEMO: ...], crea el evento en Google Calendar y devuelve el
+   * texto listo para enviar.
+   *
+   * Si el horario está ocupado NO agenda: reescribe la respuesta ofreciendo los
+   * horarios libres. Es la única parte del flujo donde el código pisa lo que
+   * escribió el agente, y es a propósito: el agente no puede saber la
+   * disponibilidad real, así que su confirmación sería una promesa falsa.
+   */
+  private async procesarMarcaDemo(respuesta: string, telefono: string): Promise<string> {
+    const match = REGEX_DEMO.exec(respuesta);
+    if (!match) return respuesta;
+
+    const limpia = respuesta.replace(match[0], '').trim();
+    const [, anio, mes, dia, hora, minuto, email] = match;
+
+    const inicio = desdeHoraNegocio(
+      Number(anio),
+      Number(mes),
+      Number(dia),
+      Number(hora),
+      Number(minuto),
+    );
+
+    if (inicio.getTime() <= Date.now()) {
+      this.logger.warn(
+        `Demo agendada en el pasado (${formatearNegocio(inicio)}) para ${telefono}, se ignora`,
+      );
+      return limpia;
+    }
+
+    const nombre = await this.memory.obtenerNombre(telefono);
+    const resultado = await this.calendar.agendarDemo({
+      inicio,
+      emailCliente: email,
+      nombreCliente: nombre || undefined,
+      telefono,
+    });
+
+    if (resultado.ok) {
+      // Con la demo agendada, la conversación pasa al equipo: es un lead
+      // caliente y alguien tiene que dar esa reunión.
+      await this.memory.derivarAHumano(telefono);
+      this.logger.log(`Conversación derivada por demo agendada: ${telefono}`);
+
+      // Acá se notifica SIEMPRE, sin pasar por registrarNotificacion(). Ese
+      // control manda un solo aviso por cliente, y una reunión agendada tiene
+      // que avisarse aunque a ese cliente ya se lo hubiera derivado antes.
+      await this.memory.registrarNotificacion(telefono);
+      await this.notificarEquipo(telefono);
+
+      const meet = resultado.meetUrl ? `\n\nEl enlace de la videollamada: ${resultado.meetUrl}` : '';
+      return `${limpia}${meet}`;
+    }
+
+    if (resultado.alternativas && resultado.alternativas.length > 0) {
+      return (
+        `Justo a esa hora ya tengo otra demo agendada. ` +
+        `Ese mismo día me queda libre a las ${resultado.alternativas.join(', ')}. ` +
+        `¿Alguno te sirve, o preferís otro día?`
+      );
+    }
+
+    if (resultado.alternativas) {
+      return (
+        `Ese día ya lo tengo completo. ¿Qué otro día te viene bien? ` +
+        `Damos demos de lunes a viernes, de 10:00 a 17:00.`
+      );
+    }
+
+    // Falla técnica: no le prometemos al cliente algo que no se agendó.
+    this.logger.error(`No se pudo agendar la demo de ${telefono}: ${resultado.motivo}`);
+    return (
+      `Tuve un problema para agendar la reunión desde acá. ` +
+      `Le paso tus datos al equipo y te confirman el horario en un rato. ` +
+      `${MARCA_DERIVAR}`
+    );
   }
 
   /**
@@ -265,6 +354,7 @@ export class WebhookService {
     const historial = await this.memory.obtenerHistorial(msg.telefono);
     let respuesta = await this.brain.generarRespuesta(msg.texto, historial);
 
+    respuesta = await this.procesarMarcaDemo(respuesta, msg.telefono);
     respuesta = await this.procesarMarcaRecontacto(respuesta, msg.telefono);
 
     if (respuesta.includes(MARCA_DERIVAR)) {
