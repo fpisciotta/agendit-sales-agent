@@ -172,7 +172,7 @@ export class WebhookService {
       case 'fuera-de-franja':
         return `Ese horario me queda fuera: damos demos ${descripcionFranjas()}.`;
       case 'muy-pronto':
-        return 'Para esa hora ya no llego a prepararla.';
+        return 'Justo a esa hora ya no tengo disponible.';
       default:
         return 'No puedo agendarte a esa hora.';
     }
