@@ -4,7 +4,7 @@
   "description": "Agente de ventas de WhatsApp con IA para Agendit (NestJS)",
   "license": "MIT",
   "scripts": {
-    "build": "nest build",
+    "build": "NODE_OPTIONS=--max-old-space-size=2048 nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
