@@ -396,6 +396,11 @@ export class WebhookService {
     // El cliente escribió: si había un recontacto agendado, ya no hace falta.
     await this.memory.cancelarProgramados(msg.telefono);
 
+    // Y vuelve a tener derecho a un recontacto: el límite es uno por silencio,
+    // no uno por cliente. Si más adelante deja la conversación colgada otra
+    // vez, el agente puede volver a escribirle.
+    await this.memory.reiniciarRecontacto(msg.telefono);
+
     // #on y #off NO se manejan acá a propósito. Son comandos del equipo, que
     // los escribe desde la app WhatsApp Business — y eso llega como eco, no
     // como mensaje del cliente (ver manejarEchoHumano). Un "#on" que entre por

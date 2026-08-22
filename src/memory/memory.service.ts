@@ -229,6 +229,18 @@ export class MemoryService {
     return candidatos;
   }
 
+  /**
+   * Borra el registro de recontacto: el cliente volvió a escribir, así que la
+   * conversación arranca de nuevo y vuelve a tener derecho a un seguimiento.
+   *
+   * Sin esto el límite era uno por cliente PARA SIEMPRE: alguien recontactado
+   * hace tres semanas por otra consulta no volvía a recibir seguimiento nunca,
+   * aunque hoy fuera un lead caliente que dejó la charla a medias.
+   */
+  async reiniciarRecontacto(telefono: string): Promise<void> {
+    await this.recontactos.delete({ telefono });
+  }
+
   async yaSeRecontacto(telefono: string): Promise<boolean> {
     return (await this.recontactos.count({ where: { telefono } })) > 0;
   }
